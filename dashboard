@@ -1,7 +1,7 @@
 ---
 title: "COVID-19 종합 데이터분석 웹프로젝트"
 date: "DEC 21, 2024"
-author: "C035288 이동준"
+author: "이동준"
 output:
   html_document:
     fig.retina: 2
