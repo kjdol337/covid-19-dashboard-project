@@ -1,0 +1,436 @@
+#API 데이터
+install.packages("httr")
+install.packages("jsonlite")
+install.packages("XML")
+library(httr)
+library(jsonlite)
+library(XML)
+library(dplyr)
+
+# <코로나19 감염현황 총괄 통계 API>
+# API 설정
+serviceUrl <- "http://apis.data.go.kr/1352000/ODMS_COVID_02"
+oper_serve <- "/callCovid02Api"
+my_key <- "YOUR_API_KEY_HERE"
+
+# 초기 설정
+pageNo <- 1       # 페이지 번호
+rows <- 500       # 한 페이지당 데이터 수
+
+# 전체 데이터 수 확인
+url <- paste0(serviceUrl, oper_serve,
+              "?serviceKey=", my_key,
+              "&numOfRows=", rows,
+              "&pageNo=", pageNo)
+
+# 첫 번째 요청으로 totalCount 추출
+response <- GET(url)
+xml_data <- xmlParse(response)
+rootNode <- xmlRoot(xml_data)
+
+# 전체 데이터 수 가져오기
+totalCount <- as.numeric(xpathSApply(rootNode, "//totalCount", xmlValue))
+cat("전체 데이터 수: ", totalCount, "\n")
+
+# 반복 횟수 계산
+loopCount <- ceiling(totalCount / rows)
+cat("반복할 페이지 수: ", loopCount, "\n")
+
+# 최종 데이터를 저장할 빈 데이터프레임 생성
+final_data <- data.frame()
+
+# 반복문을 사용해 모든 데이터 가져오기
+for (i in 1:loopCount) {
+  cat("페이지 ", i, " 처리 중...\n")
+  
+  # URL 생성
+  url <- paste0(serviceUrl, oper_serve,
+                "?serviceKey=", my_key,
+                "&numOfRows=", rows,
+                "&pageNo=", i)
+  
+  # XML 데이터 파싱
+  response <- GET(url)
+  xml_data <- xmlParse(response)
+  rootNode <- xmlRoot(xml_data)
+  
+  # items 노드에서 데이터 추출
+  page_data <- xmlToDataFrame(nodes = getNodeSet(rootNode, "//items/item"))
+  
+  # 데이터를 결합
+  final_data <- rbind(final_data, page_data)
+}
+
+final_data <- final_data %>% distinct()
+
+covid_df <- final_data %>% 
+  rename(
+    누적확진율=accDefRate,
+    누적검사수=accExamCnt,
+    누적검사완료수=accExamCompCnt,
+    치료중환자수=careCnt,
+    격리해제수=dPntCnt,
+    사망자수=gPntCnt,
+    확진자수=hPntCnt,
+    결과음성수=resutlNegCnt,
+    기준일자=statusDt,
+    기준시간=statusTime,
+    검사중수=uPntCnt
+  )
+
+
+# <코로나19 시도 발생 현황 API>
+# API 설정
+serviceUrl <- "http://apis.data.go.kr/1352000/ODMS_COVID_04"
+oper_serve <- "/callCovid04Api"
+my_key <- "YOUR_API_KEY_HERE"
+
+# 초기 설정
+pageNo <- 1       # 페이지 번호
+rows <- 500       # 한 페이지당 데이터 수
+
+# 전체 데이터 수 확인
+url <- paste0(serviceUrl, oper_serve,
+              "?serviceKey=", my_key,
+              "&numOfRows=", rows,
+              "&pageNo=", pageNo)
+
+# 첫 번째 요청으로 totalCount 추출
+response <- GET(url)
+xml_data <- xmlParse(response)
+rootNode <- xmlRoot(xml_data)
+
+# 전체 데이터 수 가져오기
+totalCount <- as.numeric(xpathSApply(rootNode, "//totalCount", xmlValue))
+cat("전체 데이터 수: ", totalCount, "\n")
+
+# 반복 횟수 계산
+loopCount <- ceiling(totalCount / rows)
+cat("반복할 페이지 수: ", loopCount, "\n")
+
+# 최종 데이터를 저장할 빈 데이터프레임 생성
+final_data <- data.frame()
+
+# 반복문을 사용해 모든 데이터 가져오기
+for (i in 1:loopCount) {
+  cat("페이지 ", i, " 처리 중...\n")
+  
+  # URL 생성
+  url <- paste0(serviceUrl, oper_serve,
+                "?serviceKey=", my_key,
+                "&numOfRows=", rows,
+                "&pageNo=", i)
+  
+  # XML 데이터 파싱
+  response <- GET(url)
+  xml_data <- xmlParse(response)
+  rootNode <- xmlRoot(xml_data)
+  
+  # items 노드에서 데이터 추출
+  page_data <- xmlToDataFrame(nodes = getNodeSet(rootNode, "//items/item"))
+  
+  # 데이터를 결합
+  final_data <- rbind(final_data, page_data)
+}
+
+# 중복 데이터 제거
+final_data <- final_data %>% distinct()
+
+covid_시도_df <- final_data %>% 
+  rename(
+    누적사망자수=deathCnt,
+    누적확진자수=defCnt,
+    시도명=gubun,
+    시도명_중문=gubunCn,
+    시도명_영문=gubunEn,
+    전일대비확진자증감수=incDec,
+    누적격리해제수=isolClearCnt,
+    격리중환자수=isolIngCnt,
+    지역발생수=localOccCnt,
+    해외유입수=overFlowCnt,
+    십만명당발생율=qurRate,
+    기준일자=stdDay
+  )
+
+
+# <코로나19 확진자 성별 연령별 현황 API>
+# API 설정
+serviceUrl <- "http://apis.data.go.kr/1352000/ODMS_COVID_05"
+oper_serve <- "/callCovid05Api"
+my_key <- "YOUR_API_KEY_HERE"
+
+# 초기 설정
+pageNo <- 1       # 페이지 번호
+rows <- 500       # 한 페이지당 데이터 수
+
+# 전체 데이터 수 확인
+url <- paste0(serviceUrl, oper_serve,
+              "?serviceKey=", my_key,
+              "&numOfRows=", rows,
+              "&pageNo=", pageNo)
+
+# 첫 번째 요청으로 totalCount 추출
+response <- GET(url)
+xml_data <- xmlParse(response)
+rootNode <- xmlRoot(xml_data)
+
+# 전체 데이터 수 가져오기
+totalCount <- as.numeric(xpathSApply(rootNode, "//totalCount", xmlValue))
+cat("전체 데이터 수: ", totalCount, "\n")
+
+# 반복 횟수 계산
+loopCount <- ceiling(totalCount / rows)
+cat("반복할 페이지 수: ", loopCount, "\n")
+
+# 최종 데이터를 저장할 빈 데이터프레임 생성
+final_data <- data.frame()
+
+# 반복문을 사용해 모든 데이터 가져오기
+for (i in 1:loopCount) {
+  cat("페이지 ", i, " 처리 중...\n")
+  
+  # URL 생성
+  url <- paste0(serviceUrl, oper_serve,
+                "?serviceKey=", my_key,
+                "&numOfRows=", rows,
+                "&pageNo=", i)
+  
+  # XML 데이터 파싱
+  response <- GET(url)
+  xml_data <- xmlParse(response)
+  rootNode <- xmlRoot(xml_data)
+  
+  # items 노드에서 데이터 추출
+  page_data <- xmlToDataFrame(nodes = getNodeSet(rootNode, "//items/item"))
+  
+  # 데이터를 결합
+  final_data <- rbind(final_data, page_data)
+}
+
+# 중복 데이터 제거
+final_data <- final_data %>% distinct()
+
+covid_성별_연령별_df <- final_data %>% 
+  rename(
+    등록일자=createDt,
+    구분명=gubun,
+    확진자수=confCase,
+    확진율=confCaseRate,
+    사망자수=death,
+    사망률=deathRate,
+    치명율=criticalRate
+  )
+
+
+
+# <코로나19 선별진료소 운영 현황 API>
+# API 설정
+serviceUrl <- "http://apis.data.go.kr/1352000/ODMS_COVID_07"
+oper_serve <- "/callCovid07Api"
+my_key <- "YOUR_API_KEY_HERE"
+
+# 초기 설정
+pageNo <- 1       # 페이지 번호
+rows <- 500       # 한 페이지당 데이터 수
+
+# 전체 데이터 수 확인
+url <- paste0(serviceUrl, oper_serve,
+              "?serviceKey=", my_key,
+              "&numOfRows=", rows,
+              "&pageNo=", pageNo)
+
+# 첫 번째 요청으로 totalCount 추출
+response <- GET(url)
+xml_data <- xmlParse(response)
+rootNode <- xmlRoot(xml_data)
+
+# 전체 데이터 수 가져오기
+totalCount <- as.numeric(xpathSApply(rootNode, "//totalCount", xmlValue))
+cat("전체 데이터 수: ", totalCount, "\n")
+
+# 반복 횟수 계산
+loopCount <- ceiling(totalCount / rows)
+cat("반복할 페이지 수: ", loopCount, "\n")
+
+# 최종 데이터를 저장할 빈 데이터프레임 생성
+final_data <- data.frame()
+
+# 반복문을 사용해 모든 데이터 가져오기
+for (i in 1:loopCount) {
+  cat("페이지 ", i, " 처리 중...\n")
+  
+  # URL 생성
+  url <- paste0(serviceUrl, oper_serve,
+                "?serviceKey=", my_key,
+                "&numOfRows=", rows,
+                "&pageNo=", i)
+  
+  # XML 데이터 파싱
+  response <- GET(url)
+  xml_data <- xmlParse(response)
+  rootNode <- xmlRoot(xml_data)
+  
+  # items 노드에서 데이터 추출
+  page_data <- xmlToDataFrame(nodes = getNodeSet(rootNode, "//items/item"))
+  
+  # 데이터를 결합
+  final_data <- rbind(final_data, page_data)
+}
+
+# 중복 데이터 제거
+final_data <- final_data %>% distinct()
+
+covid_선별진료소_운영현황_df <- final_data %>% 
+  rename(
+    등록일자=createDt,
+    시도명=sido,
+    시군구명=sigungu,
+    선별진료소명=clinicName,
+    주소=addr,
+    의료기관연락처=telNo,
+    진료소구분=gubun,
+    검체채취가능여부=smpcolYn,
+    주중운영여부=weekYn,
+    토요일운영여부=satdayYn,
+    주말공휴일운영여부=weekendYn,
+    주중운영시간=weekOperTime,
+    토요일운영시간=satdayOperTime,
+    주말_공휴일운영시간=weekendOperTime,
+    장애인시설=disabledFacility
+  )
+
+
+
+# <코로나19 사회적 거리두기 현황 API>
+# API 설정
+serviceUrl <- "http://apis.data.go.kr/1352000/ODMS_COVID_12"
+oper_serve <- "/callCovid12Api"
+my_key <- "YOUR_API_KEY_HERE"
+
+# 초기 설정
+pageNo <- 1       # 페이지 번호
+rows <- 500       # 한 페이지당 데이터 수
+
+# 전체 데이터 수 확인
+url <- paste0(serviceUrl, oper_serve,
+              "?serviceKey=", my_key,
+              "&numOfRows=", rows,
+              "&pageNo=", pageNo)
+
+# 첫 번째 요청으로 totalCount 추출
+response <- GET(url)
+xml_data <- xmlParse(response)
+rootNode <- xmlRoot(xml_data)
+
+# 전체 데이터 수 가져오기
+totalCount <- as.numeric(xpathSApply(rootNode, "//totalCount", xmlValue))
+cat("전체 데이터 수: ", totalCount, "\n")
+
+# 반복 횟수 계산
+loopCount <- ceiling(totalCount / rows)
+cat("반복할 페이지 수: ", loopCount, "\n")
+
+# 최종 데이터를 저장할 빈 데이터프레임 생성
+final_data <- data.frame()
+
+# 반복문을 사용해 모든 데이터 가져오기
+for (i in 1:loopCount) {
+  cat("페이지 ", i, " 처리 중...\n")
+  
+  # URL 생성
+  url <- paste0(serviceUrl, oper_serve,
+                "?serviceKey=", my_key,
+                "&numOfRows=", rows,
+                "&pageNo=", i)
+  
+  # XML 데이터 파싱
+  response <- GET(url)
+  xml_data <- xmlParse(response)
+  rootNode <- xmlRoot(xml_data)
+  
+  # items 노드에서 데이터 추출
+  page_data <- xmlToDataFrame(nodes = getNodeSet(rootNode, "//items/item"))
+  
+  # 데이터를 결합
+  final_data <- rbind(final_data, page_data)
+}
+
+# 중복 데이터 제거
+final_data <- final_data %>% distinct()
+
+# 중복 데이터 제거
+final_data <- final_data %>% distinct()
+
+covid_사회적거리두기현황_df <- final_data %>% 
+  rename(
+    기준일=stdDay,
+    기준단계=socdisLvl,
+    서울_단계=seoLvl,
+    서울_비고=seoRmk,
+    부산_단계=busLvl,
+    부산_비고=busRmk,
+    대구_단계=dagLvl,
+    대구_비고=dagRmk,
+    인천_단계=incLvl,
+    인천_비고=incRmk,
+    광주_단계=gwaLvl,
+    광주_비고=gwaRmk,
+    대전_단계=dajLvl,
+    대전_비고=dajRmk,
+    울산_단계=ulsLvl,
+    울산_비고=ulsRmk,
+    세종_단계=sejLvl,
+    세종_비고=sejRmk,
+    경기_단계=gygLvl,
+    경기_비고=gygRmk,
+    강원_단계=gawLvl,
+    강원_비고=gawRmk,
+    충북_단계=ccbLvl,
+    충북_비고=ccbRmk,
+    충남_단계=ccnLvl,
+    충남_비고=ccnRmk,
+    전북_단계=jebLvl,
+    전북_비고=jebRmk,
+    전남_단계=jenLvl,
+    전남_비고=jenRmk,
+    경북_단계=gsbLvl,
+    경북_비고=gsbRmk,
+    경남_단계=gsnLvl,
+    경남_비고=gsnRmk,
+    제주_단계=jejLvl,
+    제주_비고=jejRmk
+  )
+
+
+#SQL과 연동
+install.packages("DBI")
+install.packages("odbc")
+
+library(DBI)
+library(odbc)
+
+con <- dbConnect(odbc::odbc(),
+                 Driver   = "MySQL ODBC 8.0 Unicode Driver",
+                 Server   = "localhost",
+                 Database = "my_covid19",  # 새로 만든 데이터베이스 이름
+                 UID      = "root",
+                 PWD      = "YOUR_PASSWORD",
+                 Port     = 3306)
+
+print("Connection Successful!")
+
+
+# covid_df 데이터프레임을 SQL 테이블로 저장
+dbWriteTable(con, name = "covid19_data", value = covid_df, row.names = FALSE, overwrite = TRUE)
+
+# covid_시도_df 데이터프레임을 SQL 테이블로 저장
+dbWriteTable(con, name = "covid19_시도", value = covid_시도_df, row.names = FALSE, overwrite = TRUE)
+
+# covid_성별_연령별_df 데이터프레임을 SQL 테이블로 저장
+dbWriteTable(con, name = "covid19_성별_연령별", value = covid_성별_연령별_df, row.names = FALSE, overwrite = TRUE)
+
+# covid_선별진료소_운영현황_df 데이터프레임을 SQL 테이블로 저장
+dbWriteTable(con, name = "covid19_선별진료소_운영현황", value = covid_선별진료소_운영현황_df, row.names = FALSE, overwrite = TRUE)
+
+# covid_사회적거리두기현황_df 데이터프레임을 SQL 테이블로 저장
+dbWriteTable(con, name = "covid19_사회적거리두기현황", value = covid_사회적거리두기현황_df, row.names = FALSE, overwrite = TRUE)
