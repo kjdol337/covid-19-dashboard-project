@@ -1,0 +1,911 @@
+---
+title: "COVID-19 종합 데이터분석 웹프로젝트"
+date: "DEC 21, 2024"
+author: "C035288 이동준"
+output:
+  html_document:
+    fig.retina: 2
+    toc: true
+    toc_float: 
+          collapsed: true
+    code_folding: show
+    highlight: rstudio
+    css: styles.css
+
+---
+<style>
+
+body {
+      font-family:  "Garamond", sans-serif;
+      font-size: 18px;
+      line-height: 1.4;
+      color: #333333;
+      margin: 40px;
+      }  
+body:lang(ko) {
+    font-family: "Nanum Pen Script", cursive; /* Specific for Korean text */
+}
+td {  /* Table  */
+  font-size: 10px;
+}
+h1.title {
+  font-size: 64px;
+  font-family: "Garamond", Times, serif;
+  color: #000066;
+  text-align: center;
+}
+.author {
+    font-size: 24px;
+    font-family: "Garamond", Times, serif;
+  }
+.date {
+    font-size: 22px;
+    font-family: "Garamond", Times, serif;
+  }
+h1 { /* Header 1 */
+  font-size: 38px;
+  font-family: "Garamond", Times, serif;
+  color: #000066;
+  font-weight: bold; /* Add bold text */
+}
+h2 { /* Header 2 */
+    font-size: 26px;
+    font-family: "Garamond", Times, serif;
+    color: DarkBlue;
+}
+h3 { /* Header 3 */
+  font-size: 20px;
+  font-family: "Garamond", Times, serif;
+  color: DarkBlue;
+}
+h4 { /* Header 4 */
+  font-size: 12px;
+  color: DarkBlue;
+}
+h5 { /* Header 5 */
+  font-size: 10px;
+  color: Black;
+}
+code.r{ /* Code block */
+    font-size: 16px;
+}
+pre { /* Code block - determines code spacing between lines */
+    font-size: 14px;    
+}
+
+</style>
+
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Nanum+Gothic&family=Nanum+Myeongjo&family=Nanum+Pen+Script&family=Nanum+Brush+Script&display=swap');
+
+body {
+    font-family: "Nanum Gothic", sans-serif;
+}
+
+</style>
+
+
+<br>
+<br>
+ 
+# [CH 0] SQL에 저장해 두었던 API 데이터를 RMD로 불러오기 
+
+```{r}
+
+library(DBI)
+library(odbc)
+
+con <- dbConnect(odbc::odbc(),
+                 Driver   = "MySQL ODBC 8.0 Unicode Driver",
+                 Server   = "localhost",
+                 Database = "my_covid19",  # 새로 만든 데이터베이스 이름
+                 UID      = "root",
+                 PWD      = Sys.getenv("DB_PASSWORD"), # 실제 비밀번호 삭제
+                 Port     = 3306)
+
+
+# SQL 테이블 불러오기
+covid_df <- dbGetQuery(con, "SELECT * FROM covid19_data")  # SQL 테이블(covid19_data) 불러오기
+covid_시도_df <- dbGetQuery(con, "SELECT * FROM covid19_시도")  # SQL 테이블(covid19_시도) 불러오기
+covid_성별_연령별_df <- dbGetQuery(con, "SELECT * FROM covid19_성별_연령별")  # SQL 테이블(covid19_성별_연령별) 불러오기
+covid_선별진료소_운영현황_df <- dbGetQuery(con, "SELECT * FROM covid19_선별진료소_운영현황")  # SQL 테이블(covid19_선별진료소_운영현황) 불러오기
+covid_사회적거리두기현황_df <- dbGetQuery(con, "SELECT * FROM covid19_사회적거리두기현황")  # SQL 테이블(covid19_사회적거리두기현황) 불러오기
+
+# MySQL 연결 종료
+dbDisconnect(con)
+```
+
+<br>
+<br>
+
+
+
+# [CH 1] 전국 확진자/사망자 추이 그래프
+
+```{r}
+library(ggplot2)
+library(tidyverse)
+library(scales) # 날짜 월별 표시를 위해 추가
+
+
+# 기준일자 형식 변환 및 정렬
+covid_df <- covid_df %>%
+  mutate(
+    기준일자 = as.Date(기준일자, format = "%Y%m%d"), # 기준일자 날짜 변환
+    확진자수 = as.numeric(확진자수),  # 확진자수 숫자형 변환
+    사망자수 = as.numeric(사망자수)   # 사망자수 숫자형 변환
+  ) %>%
+  arrange(기준일자) %>% 
+  filter(!(기준일자 == as.Date("2023-06-07") & 사망자수 == 0))
+
+# 그래프 그리기 (보조축 추가)
+ggplot(covid_df, aes(x = 기준일자)) +
+  geom_line(aes(y = 확진자수, color = "확진자수"), size = 1) +  # 확진자수 (Primary Y축)
+  geom_line(aes(y = 사망자수 * 100, color = "사망자수"), size = 1) + # 사망자수 (Secondary Y축)
+  scale_y_continuous(
+    name = "확진자수",
+    sec.axis = sec_axis(~ . / 100, name = "사망자수")  # 보조축 스케일 조정
+  ) +
+  scale_x_date(
+    date_breaks = "3 months",   # 3개월 단위로 X축 레이블 설정
+    date_labels = "%Y-%m"       # 연도-월 형식으로 표시
+  ) +
+  scale_color_manual(values = c("확진자수" = "blue", "사망자수" = "red")) +
+  labs(
+    title = "전국 COVID-19 확진자 및 사망자 추이",
+    x = "기준일",
+    y = "확진자수",
+    color = "범례"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5),  # X축 레이블 세로 정렬
+    plot.title = element_text(hjust = 0.5, size = 16, face = "bold") # 타이틀 가운데 정렬 및 강조
+  )
+
+```
+
+**2022년 2월**을 기준으로 확진자 수가 급증하는 것을 알 수 있다. (**Why?**)  
+
+
+<br>
+<br>
+
+## [CH 1-1] 2022년 2월에는 무슨 일이?
+
+```{r, out.width="100%"}
+knitr::include_graphics("C:/Users/ST-USER/Desktop/오미크론.png")
+
+```
+
+<div style="font-size: 12px; color: gray; text-align: center;"> 출처: [대한예방의학회지 논문 발췌] </div> 
+
+**빨간 박스**에서 알 수 있듯이 2022년 2월을 기점으로 오미크론 변이가 발생하여 코로나 확진자 수가 급증했음을 알 수 있다.
+
+<br>
+<br>
+
+# [CH 2] 시도별 COVID-19 종합 분석
+## [CH 2-1] 시도별 COVID-19 분석 (발생율, 확진자수)
+### [CH 2-1-1] 시도별 발생율 지도 시각화 
+
+```{r}
+library(sf)
+
+korea_map <- st_read("C:/Users/ST-USER/Desktop/대한민국_시도_경계.json", quiet = TRUE)
+
+korea_map <- korea_map %>% 
+ mutate(
+  CTP_KOR_NM = case_when(
+    CTP_KOR_NM == "서울특별시" ~ "서울",
+    CTP_KOR_NM == "부산광역시" ~ "부산",
+    CTP_KOR_NM == "대구광역시" ~ "대구",
+    CTP_KOR_NM == "인천광역시" ~ "인천",
+    CTP_KOR_NM == "광주광역시" ~ "광주",
+    CTP_KOR_NM == "대전광역시" ~ "대전",
+    CTP_KOR_NM == "울산광역시" ~ "울산",
+    CTP_KOR_NM == "세종특별자치시" ~ "세종",
+    CTP_KOR_NM == "경기도" ~ "경기",
+    CTP_KOR_NM == "강원도" ~ "강원",
+    CTP_KOR_NM == "충청북도" ~ "충북",
+    CTP_KOR_NM == "충청남도" ~ "충남",
+    CTP_KOR_NM == "전라북도" ~ "전북",
+    CTP_KOR_NM == "전라남도" ~ "전남",
+    CTP_KOR_NM == "경상북도" ~ "경북",
+    CTP_KOR_NM == "경상남도" ~ "경남",
+    CTP_KOR_NM == "제주특별자치도" ~ "제주",
+    TRUE ~ CTP_KOR_NM  # 기존 값 유지
+  )
+)
+
+# COVID 데이터 전처리
+covid_시도_revised_df <- covid_시도_df %>%
+  filter(시도명 != "합계") %>%
+  mutate(
+    십만명당발생율 = gsub(",", "", 십만명당발생율), # 콤마 제거
+    십만명당발생율 = as.numeric(십만명당발생율) # 숫자형 변환
+  ) 
+
+covid_시도_revised_new_df <- covid_시도_revised_df %>%  # NA가 있는 행 제거
+  filter(!is.na(십만명당발생율))
+
+# 지도 데이터와 병합
+korea_map <- korea_map %>%
+  left_join(covid_시도_revised_new_df, by = c("CTP_KOR_NM" = "시도명"))
+
+
+ggplot(korea_map) +
+  geom_sf(aes(fill = 십만명당발생율), color = "white", size = 0.2) + # 지도 그리기
+  scale_fill_gradient(low = "skyblue", high = "red", na.value = "grey80") + # 색상 설정
+  geom_sf_text(aes(label = CTP_KOR_NM), size = 3, color = "black") +  # 이름 추가
+  labs(
+    title = "지역별 COVID-19 발생률 (십만명당 발생율)",
+    fill = "발생률",
+    x = "경도",  # x축 레이블
+    y = "위도"   # y축 레이블
+  ) +
+  theme_minimal()
+
+```
+
+**수도권**과 **울산** 지역의 확진자 발생율이 높은 것을 알 수 있다.
+
+
+<br>
+<br>
+
+### [CH 2-1-2] 시도별 확진자수 시계열 분석
+```{r}
+covid_시도_revised_df <- covid_시도_revised_df %>%  # 데이터 전처리 
+  filter(기준일자 != "2022-03-30") # 2022-03-30 일자 데이터가 오류 
+
+covid_시도_시계열_df <- covid_시도_revised_df %>%
+  mutate(
+    기준일자 = as.Date(기준일자, format = "%Y-%m-%d"),  # 기준일자 날짜 형식 변환
+    누적확진자수 = as.numeric(누적확진자수)           # 누적확진자수 숫자형 변환
+  )
+
+# 시도별 누적확진자수 시계열 그래프
+ggplot(covid_시도_시계열_df, aes(x = 기준일자, y = 누적확진자수, color = 시도명)) +
+  geom_line(size = 0.6) +  # 선 그래프
+  labs(
+    title = "시도별 누적확진자수 시계열 변화",
+    x = "기준일자",
+    y = "누적확진자수",
+    color = "시도명"  # 범례 제목
+  ) +
+  scale_x_date(
+    date_breaks = "3 months",  # X축 3개월 간격
+    date_labels = "%Y-%m"      # 연-월 형식으로 X축 레이블 표시
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 16, face = "bold"),  # 제목 가운데 정렬 및 강조
+    axis.text.x = element_text(angle = 45, hjust = 1),                # X축 레이블 기울임
+    legend.position = "bottom"                                       # 범례 하단 위치
+  )
+
+
+```
+
+예상대로 **수도권(서울, 경기)**의 누적확진자 수가 압도적으로 많은 것을 알 수 있다.  
+또한, **[CH 1]**에서 살펴본 바와 같이 오미크론 변이에 의해 **2022년 2월**을 기점으로 전국적으로 확진자 수가 급증한 것을 다시 확인할 수 있다.
+
+
+
+<br>
+<br>
+
+
+### [CH 2-1-3] 시도별 K-means 클러스터링 (발생율, 확진자 수를 기준)
+```{r}
+# 1. 데이터 전처리: covid_시도_revised_df
+covid_시도_revised2_df <- covid_시도_revised_df %>%
+  mutate(
+    누적확진자수 = as.numeric(누적확진자수),
+    십만명당발생율 = as.numeric(십만명당발생율)
+  )
+covid_시도_revised2_df <- covid_시도_revised2_df %>%  # NA가 있는 행 제거
+  filter(!is.na(십만명당발생율)) %>% 
+  filter(시도명 != "검역")  # 검역 데이터는 제거
+
+covid_시도_revised3_df <- covid_시도_revised2_df %>%
+  group_by(시도명) %>%
+  summarize(
+    최신_확진자수 = last(누적확진자수[order(기준일자)]), # 가장 최근 누적확진자수
+    평균_발생율 = median(십만명당발생율, na.rm = TRUE)       # 발생률은 중앙값으로 계산
+  ) %>%
+  ungroup()
+
+# 2. 클러스터링 수행
+# 클러스터링을 위한 데이터 정규화
+scaled_data <- covid_시도_revised3_df %>%
+  select(최신_확진자수, 평균_발생율) %>%
+  scale()
+
+# K-means 클러스터링
+set.seed(42)
+kmeans_result <- kmeans(scaled_data, centers = 3, nstart = 10)
+covid_시도_revised3_df$클러스터 <- as.factor(kmeans_result$cluster)
+
+# 3. 시도별 좌표 데이터 정의 및 병합
+coordinates <- data.frame(
+  시도명 = c("서울", "부산", "대구", "인천", "광주", "대전", "울산", 
+           "세종", "경기", "강원", "충북", "충남", "전북", "전남", "경북", "경남", "제주"),
+  경도 = c(126.977, 129.075, 128.601, 126.705, 126.853, 127.384, 129.312,
+          127.289, 127.518, 128.204, 127.491, 126.672, 127.149, 126.463, 128.725, 128.064, 126.531),
+  위도 = c(37.566, 35.179, 35.871, 37.456, 35.159, 36.35, 35.539,
+          36.481, 37.263, 37.885, 36.635, 36.658, 35.821, 34.816, 36.576, 35.229, 33.499)
+)
+
+# 좌표 데이터를 기반으로 sf 객체 생성
+shp <- st_as_sf(
+  data.frame(
+    시도명 = coordinates$시도명,
+    geometry = st_sfc(
+      mapply(function(lon, lat) st_point(c(lon, lat)), coordinates$경도, coordinates$위도, SIMPLIFY = FALSE)
+    )
+  )
+)
+
+# 병합
+shp <- shp %>%
+  left_join(covid_시도_revised3_df, by = "시도명")
+
+# 4. 지도 시각화
+ggplot(data = shp) +
+  geom_sf(aes(fill = 클러스터, shape = 클러스터), color = "black", size = 4) + # 도형 크기 확대
+  scale_fill_brewer(palette = "Set3") + # 클러스터별 색상 차이
+  scale_shape_manual(values = c(21, 22, 23)) + # 클러스터별 도형 지정
+  geom_text(aes(label = 시도명, geometry = geometry), 
+            stat = "sf_coordinates", 
+            nudge_y = 0.2, size = 2.5, color = "black") + # 글씨 크기 축소 및 위치 조정
+  labs(
+    title = "시도별 COVID-19 클러스터링",
+    fill = "클러스터",
+    shape = "클러스터"
+  ) +
+  theme_minimal()
+
+# 5. 클러스터별 특징 분석
+cluster_summary <- covid_시도_revised3_df %>%
+  group_by(클러스터) %>%
+  summarize(
+    평균_최신_확진자수 = mean(최신_확진자수, na.rm = TRUE),
+    평균_발생율 = mean(평균_발생율, na.rm = TRUE)
+  )
+
+print(cluster_summary)
+
+```
+
+**클러스터 1** : 수도권(서울, 경기) 지역으로 가장 높은 확진자 수와 발생율을 보인다.  
+=> 방역과 감시가 중요한 **고위험 지역**이라고 할 수 있다.
+
+
+<br>
+<br>
+
+
+## [CH 2-2] 시도별 COVID-19 분석 (선별진료소, 사회적거리두기)
+### [CH 2-2-1] 시도별 선별진료소 개수 (+확진자 수)
+```{r}
+# Step 1: 시도별 선별진료소 개수 데이터 준비
+region_count <- covid_선별진료소_운영현황_df %>%
+  group_by(시도명) %>%
+  summarise(선별진료소_개수 = n())
+
+# Step 2: 시도별로 가장 최신 누적확진자수 데이터 필터링
+latest_case_data <- covid_시도_df %>%
+  group_by(시도명) %>%
+  slice_max(order_by = 기준일자, n = 1) %>% # 시도별 최신 날짜 데이터 선택
+  ungroup() %>%
+  select(시도명, 누적확진자수)
+
+# Step 3: 각 시도명별로 누적확진자수가 가장 큰 행 선택
+largest_case_data <- latest_case_data %>%
+  group_by(시도명) %>%
+  slice_max(order_by = 누적확진자수, n = 1) %>%
+  ungroup() %>% 
+  distinct() %>%
+  filter(!시도명 %in% c("검역", "합계"))
+
+# Step 4: 그래프 그리기
+ggplot() +
+  # 막대그래프: 선별진료소 개수 (왼쪽 Y축)
+  geom_bar(data = region_count, 
+           aes(x = reorder(시도명, -선별진료소_개수), y = 선별진료소_개수), 
+           stat = "identity", fill = "royalblue", alpha = 0.7) +
+  # 선그래프: 누적확진자수 (오른쪽 Y축)
+  geom_line(data = largest_case_data, 
+            aes(x = 시도명, y = as.numeric(누적확진자수) / 100000, group = 1), 
+            color = "red", size = 1.2) +
+  geom_point(data = largest_case_data, 
+             aes(x = 시도명, y = as.numeric(누적확진자수) / 100000), 
+             color = "red", size = 2) +
+  # Y축 설정: 왼쪽과 오른쪽 Y축 별도 설정
+  scale_y_continuous(
+    name = "선별진료소 개수", 
+    sec.axis = sec_axis(~ . * 1000, name = "누적확진자수 (십만 단위)") # 오른쪽 Y축
+  ) +
+  # 라벨 및 제목
+  labs(
+    title = "시도별 누적확진자수(십만 단위)와 선별진료소 개수",
+    x = "시도명"
+  ) +
+  # 테마 설정
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    axis.title.y.left = element_text(color = "royalblue"), # 왼쪽 Y축 색상 강조
+    axis.title.y.right = element_text(color = "red") # 오른쪽 Y축 색상 강조
+  )
+
+```
+
+확진자 수가 많은 경기에는 선별진료소가 많고, 확진자 수가 적은 세종에는 선별진료소가 적음을 알 수 있다.    
+**=> 확진자 수와 선별진료소 개수 간에 양의 상관관계를 가질 것으로 예상된다. (상관관계 분석 수행)**  
+
+<br>
+
+```{r}
+# Step 1: 필요한 데이터 결합
+merged_data <- region_count %>%
+  inner_join(largest_case_data, by = "시도명")  # 시도명 기준으로 결합
+
+# Step 2: 상관계수 계산
+correlation <- cor(merged_data$선별진료소_개수, as.numeric(merged_data$누적확진자수))
+print(paste("선별진료소 개수와 누적확진자수 간의 상관계수:", round(correlation, 3)))
+
+```
+
+선별진료소 개수와 누적확진자수 간의 상관계수는 **0.775**로 상당히 **높은 수준의 양의 상관관계**를 가진다고 할 수 있다.  
+**즉, 누적확진자수가 많은 시도일수록 선별진료소 개수가 많은 경향을 보여준다고 해석할 수 있다.**    
+(단, 인과관계를 의미하는 것은 아니므로 필연적인 것은 아님에 유의할 필요가 있다.)
+
+<br>
+<br>
+
+### [CH 2-2-2] 시도별 선별진료소의 주중/토요일 운영 비율 (+확진자 수)
+```{r}
+# 데이터 준비
+operation_summary <- covid_선별진료소_운영현황_df %>%
+  group_by(시도명) %>%
+  summarise(
+    주중_운영_비율 = mean(주중운영여부 == "Y") * 100,
+    토요일_운영_비율 = mean(토요일운영여부 == "Y") * 100
+  )
+
+# 데이터 재구성 (긴 형태로 변환)
+operation_long <- operation_summary %>%
+  pivot_longer(cols = c(주중_운영_비율, 토요일_운영_비율),
+               names_to = "운영_종류",
+               values_to = "운영_비율")
+
+# 그래프 생성
+ggplot(operation_long, aes(x = 시도명, y = 운영_비율, fill = 운영_종류)) +
+  geom_bar(stat = "identity", position = position_dodge(width = 0.8)) + # 두 줄로 나누기
+  scale_fill_manual(
+    values = c("주중_운영_비율" = "skyblue", "토요일_운영_비율" = "orange"),
+    labels = c("주중", "토요일")
+  ) +
+  labs(
+    title = "시도별 주중 및 토요일 운영 비율",
+    x = "시도명",
+    y = "운영 비율 (%)",
+    fill = "운영 종류"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(vjust = 7),
+    legend.position = "right" # 범례를 오른쪽으로 이동
+  )
+```
+
+주중에는 대부분의 시도에서 선별진료소를 운영함을 알 수 있다.  
+**토요일**은 **각 시도별 선별진료소 운영비율이 제각각임**을 알 수 있다.  
+<br>
+누적 확진자 수가 가장 적었던 세종시의 선별진료소의 토요일 운영비율이 가장 높고, 확진자 수가 가장 많았던 경기도의 선별진료소의 토요일 운영비율은 그다지 높지 않음을 알 수 있다.  
+**=>누적확진자 수와 선별진료소의 토요일 운영비율 간의 상관성은 작을 것으로 예상된다. (상관관계 분석 수행)**
+
+<br>
+
+```{r}
+
+saturday_rate<- operation_summary %>% 
+  select(시도명, 토요일_운영_비율)
+
+merged_data_2 <- left_join(largest_case_data, saturday_rate, by = "시도명")
+
+correlation <- cor(as.numeric(merged_data_2$누적확진자수), merged_data_2$토요일_운영_비율)
+print(paste("선별진료소의 토요일 운영비율과 누적확진자수 간의 상관계수:", round(correlation, 3)))
+
+```
+
+선별진료소의 토요일 운영비율과 누적확진자수 간의 상관계수는 **0.006**로 두 변수 사이의 상관성은 거의 없음을 알 수 있다.  
+**즉, 누적확진자 수와 토요일 운영비율 간에는 서로 관계가 없거나 있어도 미미하다라고 할 수 있다.**
+
+<br>
+<br>
+
+### [CH 2-2-3] 시도별 사회적거리두기 단계 추이 (+확진자 수)
+```{r}
+
+#2020.12.08 - 2021.10.31 기간의 데이터분석
+covid_시도_거리두기_df <- covid_시도_df %>%
+  mutate(기준일자 = as.Date(기준일자, format = "%Y-%m-%d"))
+
+covid_시도_거리두기_df <- covid_시도_거리두기_df %>% 
+  filter(기준일자 >= as.Date("2020-12-08") & 기준일자 <= as.Date("2021-10-31")) %>%
+  select(시도명, 누적확진자수, 기준일자) %>% 
+  filter(!시도명 %in% c("검역", "합계"))
+
+  
+# 기준일자를 Date 형식으로 변환
+covid_사회적거리두기현황_revised_df <- covid_사회적거리두기현황_df %>%
+  mutate(기준일 = as.Date(기준일, format = "%Y-%m-%d"))
+
+# 피봇 변환: 단계 정보를 long format으로 변환
+distance_measures <- covid_사회적거리두기현황_revised_df %>%
+  select(기준일, ends_with("_단계")) %>%
+  pivot_longer(
+    cols = ends_with("_단계"),
+    names_to = "시도명",
+    names_pattern = "(.*)_단계",
+    values_to = "단계"
+  )
+
+# 기준일자와 시도명을 기준으로 레프트 조인
+merged_time_series <- distance_measures %>%
+  left_join(covid_시도_거리두기_df, by = c("기준일" = "기준일자", "시도명" = "시도명"))
+
+merged_time_series$단계 <- as.numeric(merged_time_series$단계)
+merged_time_series$누적확진자수 <- as.numeric(merged_time_series$누적확진자수)
+merged_time_series$누적확진자수[merged_time_series$기준일 == "2021-09-01" & merged_time_series$시도명 == "세종"] <- 1003
+ 
+
+ggplot(merged_time_series, aes(x = 기준일, y = 단계, color = 시도명)) +
+  geom_line(size = 1) +
+  labs(
+    title = "시도별 사회적거리두기 단계 시계열",
+    x = "기준일자",
+    y = "단계"
+  ) +
+  scale_x_date(
+    date_breaks = "1 month",
+    date_labels = "%Y-%m"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 90, hjust = 1),
+    legend.position = "none"
+  ) +
+  facet_wrap(~시도명, scales = "free_y", ncol = 4)
+```
+
+**2021년 7월을 기점**으로 대부분의 시도의 사회적거리두기 단계가 격상되었음을 알 수 있다. **(확진자 수와의 관계?)**
+
+<br>
+
+```{r}
+# 시도별 누적확진자수 시계열 그래프
+ggplot(merged_time_series, aes(x = 기준일, y = 누적확진자수, color = 시도명)) +
+  geom_line(size = 0.6) +  # 누적확진자수 선 그래프
+
+  labs(
+    title = "시도별 누적확진자 수 시계열",
+    x = "기준일자",
+    y = "누적확진자 수"
+  ) +
+  scale_x_date(
+    date_breaks = "1 month",
+    date_labels = "%Y-%m"
+  ) +
+  scale_y_continuous(
+    labels = scales::comma  # 숫자에 콤마 추가
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 90, hjust = 1, size = 8), 
+    axis.text.y = element_text(size = 8),
+    legend.position = "right"
+  ) +
+  facet_wrap(~시도명, scales = "free_y", ncol = 4)  # 시도별로 분할, 4열로 배치
+```
+
+ 대부분의 시도에서 **2021년 7월**에서 확진자 수가 급증했음을 알 수 있다.    
+**=> 확진자 수와 사회적거리두기 단계 간에는 양의 상관관계를 가질 것으로 예상된다. (상관관계 분석 수행)** 
+
+
+<br>
+
+```{r}
+regions <- unique(merged_time_series$시도명)
+region_correlations <- data.frame(시도명 = character(), 상관계수 = numeric())
+
+for (region in regions) {
+  region_data <- subset(merged_time_series, 시도명 == region)
+  if (nrow(region_data) > 1) {  # 최소 2개의 데이터가 있을 때만 상관계수 계산
+    cor_value <- cor(
+      as.numeric(region_data$단계),
+      as.numeric(region_data$누적확진자수),
+      use = "complete.obs"
+    )
+    region_correlations <- rbind(
+      region_correlations,
+      data.frame(시도명 = region, 상관계수 = round(cor_value, 3))
+    )
+  }
+}
+
+print(region_correlations)
+
+```
+
+누적확진자수와 사회적거리두기 단계 간의 상관계수는 **가장 높은 지역(제주)에서는 0.813**이고,   
+**가장 낮은 지역(부산)마저도 0.635**로 **매우 높은 수준의  양의 상관관계**를 가진다고 할 수 있다.  
+**즉, 시도별로 누적확진자수가 많이 발생할수록 사회적거리두기 단계는 격상하는 경향을 보여준다고 해석할 수 있다.**    
+
+
+<br>
+<br>
+
+
+# [CH 3] 성별, 연령별 COVID-19 취약도 분석
+```{r}
+# 데이터 전처리(빈칸 처리)
+# 확진율, 치명율, 등록일자 열에서 빈칸("")에 해당하는 값들을 전부 NA로 변환
+covid_성별_연령별_df <- covid_성별_연령별_df %>%
+  mutate(
+    확진율 = ifelse(확진율 == "", NA, 확진율),
+    치명율 = ifelse(치명율 == "", NA, 치명율),
+    등록일자 = ifelse(등록일자 == "", NA, 등록일자)
+  )
+
+# 결측치 처리: 확진율, 치명율, 등록일자 중 하나라도 NA인 행 제거
+covid_성별_연령별_clean_df <- covid_성별_연령별_df %>%
+  filter(!is.na(확진율) & !is.na(치명율) & !is.na(등록일자))%>%
+  mutate(등록일자 = as.Date(등록일자))  # 등록일자를 Date 형식으로 변환
+
+
+```
+   
+<br>
+<br>
+
+
+
+
+## [CH 3-1] 성별 COVID-19 취약도 분석
+
+```{r}
+library(patchwork) 
+
+covid_성별_clean_df <- covid_성별_연령별_clean_df %>%
+  filter(구분명 %in% c("남성", "여성"))
+
+# 확진율 그래프
+p1 <- ggplot(covid_성별_clean_df, aes(x = 등록일자)) +
+  geom_line(data = filter(covid_성별_clean_df, 구분명 == "남성"),
+            aes(y = as.numeric(확진율), color = "남성"), size = 0.6) +
+  geom_line(data = filter(covid_성별_clean_df, 구분명 == "여성"),
+            aes(y = as.numeric(확진율), color = "여성"), size = 0.6) +
+  scale_color_manual(values = c("남성" = "blue", "여성" = "red")) +
+  labs(
+    title = "남성 및 여성 COVID-19 확진율 추이",
+    x = "등록일자",
+    y = "확진율 (%)",
+    color = "성별"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 16, face = "bold"),
+    axis.text.x = element_text(angle = 45, hjust = 1)
+  )
+
+# 치명율 그래프
+p2 <- ggplot(covid_성별_clean_df, aes(x = 등록일자)) +
+  geom_line(data = filter(covid_성별_clean_df, 구분명 == "남성"),
+            aes(y = as.numeric(치명율), color = "남성"), size = 0.6) +
+  geom_line(data = filter(covid_성별_clean_df, 구분명 == "여성"),
+            aes(y = as.numeric(치명율), color = "여성"), size = 0.6) +
+  scale_color_manual(values = c("남성" = "blue", "여성" = "red")) +
+  labs(
+    title = "남성 및 여성 COVID-19 치명율 추이",
+    x = "등록일자",
+    y = "치명율 (%)",
+    color = "성별"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 16, face = "bold"),
+    axis.text.x = element_text(angle = 45, hjust = 1)
+  )
+
+# 그래프 병합 (1행 2열 배치)
+p1 + p2 + plot_layout(ncol = 2)
+
+```
+
+**확진율(확진된 사람 수/전체 사람 수)** 측면:   
+대체로 여성의 확진율이 남성보다 높음을 알 수 있다.    
+=> 확진율: 여성 > 남성
+
+**치명율(확진된 사람 중 사망한 사람 수/확진된 사람 수)** 측면:    
+대체로 남성의 치명율이 여성보다 높음을 알 수 있다.     
+=> 치명율: 남성 > 여성  
+
+
+**따라서, 특정 성별이 COVID-19에 더 취약하다고 단정짓기에는 무리가 있으며,   
+감염 가능성 측면에서는 여성이 취약하고 감염 시 위험성 측면에서는 남성이 취약하다고 결론 지을 수 있다.**
+<br>
+<br>
+(cf) 실제로 '사망률 = 확진율 * 치명율 = 확진된 사람 중 사망한 사람 수 / 전체 사람 수'이므로 사망률 관점에서 보면, 두 성별이 비슷한 정도에 수렴한다고 볼 수 있다.  
+
+
+
+<br>
+<br>
+
+## [CH 3-2] 연령별 COVID-19 취약도 분석
+
+```{r}
+covid_연령_clean_df <- covid_성별_연령별_clean_df %>%
+  filter(구분명 %in% c("0-9", "10-19", "20-29", "30-39", 
+                      "40-49", "50-59", "60-69", "70-79", "80 이상"))
+
+
+# 확진율 그래프
+p3 <- ggplot(covid_연령_clean_df, aes(x = 등록일자, group = 구분명)) +
+  geom_line(aes(y = as.numeric(확진율), color = 구분명), size = 0.6) +
+  labs(
+    title = "연령대별 COVID-19 확진율 추이",
+    x = "등록일자",
+    y = "확진율 (%)",
+    color = "연령대"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 16, face = "bold"),
+    axis.text.x = element_text(angle = 45, hjust = 1)
+  )
+
+# 치명율 그래프
+p4 <- ggplot(covid_연령_clean_df, aes(x = 등록일자, group = 구분명)) +
+  geom_line(aes(y = as.numeric(치명율), color = 구분명), size = 0.6) +
+  labs(
+    title = "연령대별 COVID-19 치명율 추이",
+    x = "등록일자",
+    y = "치명율 (%)",
+    color = "연령대"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 16, face = "bold"),
+    axis.text.x = element_text(angle = 45, hjust = 1)
+  )
+
+# 그래프 병합 (1행 2열 배치)
+p3 + p4 + plot_layout(ncol = 2)
+
+
+```
+
+**확진율(확진된 사람 수/전체 사람 수)** 측면:   
+노령층(70-79세, 80세 이상)의 확진율이 다른 연령에 비해 낮다는 것을 알 수 있다.  
+=> 노령층의 이동량(통행량 또는 활동량)이 다른 연령층에 비해 적기 때문? **(추가 분석 수행)**
+
+
+**치명율(확진된 사람 중 사망한 사람 수/확진된 사람 수)** 측면:  
+노령층(70-79세, 80세 이상)의 치명율이 다른 연령에 비해 높다는 것을 알 수 있다.      
+=> 노령층의 면역력이 다른 연령층에 비해 낮기 때문? **(추가 분석 수행)**
+
+
+<br>
+<br>
+
+### [CH 3-2-1] 연령별 COVID-19 취약도 추가 분석(확진율) 
+
+```{r}
+library(readxl)
+
+# 엑셀 파일 경로 지정 (파일 이름과 경로를 정확하게 입력)
+file <- "C:/Users/ST-USER/Desktop/통신+모바일+인구이동량+통계+관내외+자료(~241201까지).xlsx"  
+
+data <- read_excel(file, sheet = "성_연령_입지유형")
+
+
+
+
+# 1. 데이터 전처리
+data_revised <- data %>% 
+  filter(is.na(data$`3-1. 성/연령/입지유형별 이동량`) == FALSE)
+
+names(data_revised)[1] <- "등록일자"
+names(data_revised)[11:17] <- c("20세 미만", "20대", "30대", "40대", "50대", "60대", "70세 이상")
+
+data_revised <- data_revised %>%
+  select(등록일자, `20세 미만`, `20대`, `30대`, `40대`, `50대`, `60대`, `70세 이상`)
+
+
+data_long <- data_revised %>%
+  pivot_longer(cols = c("20세 미만", "20대", "30대", "40대", "50대", "60대", "70세 이상"), 
+               names_to = "연령대", values_to = "이동량")
+
+
+# 이동량을 숫자형으로 변환하고 월별 데이터 처리
+data_monthly <- data_long %>%
+  mutate(
+    등록일자 = substr(등록일자, 1, 7),          # 연도와 월만 추출
+    이동량 = as.numeric(이동량)                # 이동량을 숫자형으로 변환
+  ) %>%
+  group_by(등록일자, 연령대) %>%               # 월별, 연령대별 그룹화
+  summarise(이동량 = sum(이동량, na.rm = TRUE)) %>%  # 이동량 합계
+  ungroup()
+
+data_monthly <- data_monthly %>%
+  mutate(등록일자 = as.Date(paste0(등록일자, ".01"), format = "%Y.%m.%d"))
+
+data_monthly <- data_monthly %>%
+  mutate(연령대 = factor(연령대, levels = c("20세 미만", "20대", "30대", "40대", 
+                                            "50대", "60대", "70세 이상")))
+
+# 월별 이동량 추이 그래프
+ggplot(data_monthly, aes(x = 등록일자, y = 이동량, color = 연령대)) +
+  geom_line(size = 0.6) +
+  labs(
+    title = "연령대별 이동량 추이",
+    x = "등록일자 (월별)",
+    y = "이동량",
+    color = "연령대"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 16, face = "bold"),
+    axis.text.x = element_text(angle = 45, hjust = 1)
+  )
+```
+
+**노령층(70세 이상)의 이동량**이 다른 연령층에 비해 현저히 적음을 알 수 있다.
+
+**노령층의 확진율이 다른 연령에 비해 낮은 이유**는 **노령층의 절대적인 이동량(통행량 또는 활동량)이 다른 연령층에 비해 적기 때문**이라 볼 수 있다.
+
+<br>
+<br>
+
+### [CH 3-2-2] 연령별 COVID-19 취약도 추가 분석(치명율) 
+
+```{r, out.width="100%"}
+knitr::include_graphics("C:/Users/ST-USER/Desktop/면역.png")
+
+```
+
+<div style="font-size: 12px; color: gray; text-align: center;"> 출처: 대한임상병리학회지 : 제21권 제2호 2001 Korean J Clin Pathol 2001; 21: 135-40 </div> ```
+
+**빨간 박스**에서 알 수 있듯이 노령층의 림프구(면역을 담당하는 세포)가 다른 연령층에 비해 적음을 알 수 있다.  
+즉, 예상했던대로 **노령층의 면역력**이 다른 연령층에 비해 낮다는 것을 알 수 있다.  
+따라서, **노령층(70-79세, 80세 이상)의 치명율이 다른 연령에 비해 높은 이유**는 **노령층의 면역력이 다른 연령에 비해 낮기 때문**이라고 할 수 있다.
+
+<br>
+<br>
+
+### [CH 3-2-3] 연령별 COVID-19 취약도 결론
+
+노령층의 확진율이 적은 이유는 단순히 노령층의 이동량(통행량 또는 활동량)이 다른 연령에 비해서 적기 때문이라 할 수 있는 반면, 
+노령층의 치명율이 높은 이유는 노령층의 면역력이 다른 연령에 비해 낮기 때문이라고 할 수 있으므로 
+**노령층이 다른 연령층보다 COVID-19에 더 취약하다**고 결론지을 수 있다.
+
+
+
+
+<br>
+<br>
+
+
+
+<br>
+<br>
+
+<div style="font-size: 20pt; line-height: 2; text-align: center;">  **한 학기동안 감사했습니다.** </div>
+<br>
+<br>
