@@ -3,29 +3,44 @@
 
 ## 주요 기능 (Key Features)
 자동화된 데이터 파이프라인 구축
+
 보건복지부 코로나19 공공데이터 API 연동 및 XML 데이터 파싱
+
 수집된 원시 데이터를 R을 통해 전처리하고 로컬 MySQL 데이터베이스(my_covid19)에 자동 적재
+
 다차원 데이터 시각화 및 대시보드 생성
+
 데이터베이스와 연동하여 RMarkdown 기반의 정적 웹 대시보드(HTML) 생성
+
 연령대별 누적 확진율, 인구 이동량과 감염의 상관관계, 연령별 치명률 등 심층적인 시각화(ggplot2) 및 통계 분석 제공
 
 ## 기술 스택 (Tech Stack)
 Language: R
+
 Database: MySQL
+
 Data Collection: Public Data API (공공데이터포털)
+
 Libraries (R): httr, XML, jsonlite, dplyr, DBI, odbc, ggplot2, rmarkdown, knitr
 
 ## 프로젝트 파일 구조
 API데이터 불러오기 및 MySQL에 저장하는 코드.R : 공공 API 데이터를 호출하고 MySQL DB에 테이블 형태로 적재하는 스크립트
+
 dashboard.txt (RMarkdown) : 저장된 데이터를 불러와 통계 분석 및 그래프를 그리고 HTML 문서로 변환하기 위한 마크다운 코드
+
 covid19.html : RMarkdown 파일이 빌드(Knit)되어 최종적으로 생성된 웹 대시보드 결과물
 
 ## 사전 준비사항 (Prerequisites)
 MySQL 서버 설치 및 설정
+
 로컬 환경에 MySQL 설치 (Port: 3306)
+
 my_covid19 데이터베이스 생성
+
 MySQL ODBC 8.0 Unicode Driver 설치 필요
+
 공공데이터포털 API Key
+
 보건복지부_코로나19 감염현황 총괄 통계 API 서비스 키 발급 및 코드 내 반영 필요
 
 ## 실행방법
