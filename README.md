@@ -26,9 +26,12 @@ Libraries (R): httr, XML, jsonlite, dplyr, DBI, odbc, ggplot2, rmarkdown, knitr
 ## 프로젝트 파일 구조
 API데이터 불러오기 및 MySQL에 저장하는 코드.R : 공공 API 데이터를 호출하고 MySQL DB에 테이블 형태로 적재하는 스크립트
 
+
 dashboard.txt (RMarkdown) : 저장된 데이터를 불러와 통계 분석 및 그래프를 그리고 HTML 문서로 변환하기 위한 마크다운 코드
 
+
 covid19.html : RMarkdown 파일이 빌드(Knit)되어 최종적으로 생성된 웹 대시보드 결과물
+
 
 ## 사전 준비사항 (Prerequisites)
 MySQL 서버 설치 및 설정
